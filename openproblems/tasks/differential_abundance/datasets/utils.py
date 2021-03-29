@@ -19,6 +19,97 @@ def _preprocess(adata):
     adata.uns["preprocessed_for_differential_abundance"] = True
     return adata
 
+def _diffuse_values(adata, thresh=1e-6, max_iter=10000, ref_neighbors=7):
+    """Uses diffusion to interpolate between fixed values at set reference points
+
+    Parameters
+    ----------
+    adata : AnnData
+        AnnData object must have the following keys in `uns`: 'reference_index',
+        'reference_values', 'graph' OR .obsp 'connectivities'
+    thresh : Float
+        Stopping condition for diffusion. Each iteration, the difference between the
+        diffused values from the previous and current step is calculated. Once the delta
+        is less than `thresh`, the process stops
+    max_iter : Int
+        Maximum number of iterations before diffusion is stopped.
+    ref_neighbors : Int
+        Number of neighbors used to expand reference values
+
+    Returns
+    -------
+    values_interp
+        Values diffused over the graph from the reference points.
+
+    """
+
+    # Get reference indicies
+    reference_index = adata.uns["reference_index"]
+    n_ref = len(reference_index)
+
+    # Mask to get values that aren't references for interpolation
+    not_reference = ~np.isin(np.arange(adata.n_obs), reference_index)
+
+    ## Generate signal values at each reference
+    # Assign values to peaks
+    values = np.tile([0, 1], n_ref // 2 + 1)[:n_ref]
+    np.random.shuffle(values)
+    adata.uns["reference_values"] = values
+
+    # Get graph
+    try:
+        graph = adata.uns["graph"]
+    except AttributeError:
+        graph = gt.Graph(adata.obsp["connectivities"], precomputed="adjacency")
+
+    # Expand reference points to kNN neighborhood centered at each reference index
+    kneighbors = graph._knn_tree.kneighbors(
+        adata.obsm["X_pca"][reference_index],
+        n_neighbors=ref_neighbors,
+        return_distance=False,
+    )
+
+    # Collect new indices and values for extended reference set including neighbors of
+    # each reference
+    ref_index_extended = np.array([], int)
+    values_extended = np.array([], float)
+    for i, ref_ix in enumerate(reference_index):
+        curr_value = values[i]  # Select the reference value for the original point
+        curr_neighbors = kneighbors[i]  # Get the NN for the original point
+        curr_values_ext = np.full(curr_neighbors.shape[0], curr_value)
+        # Add original reference to extended array
+        ref_index_extended = np.hstack((ref_index_extended, np.array(ref_ix)))
+        values_extended = np.hstack((values_extended, np.array(curr_value)))
+
+        # Add neighbors to extended array
+        ref_index_extended = np.hstack((ref_index_extended, curr_neighbors))
+        values_extended = np.hstack((values_extended, curr_values_ext))
+
+    adata.uns["reference_index_ext"] = ref_index_extended
+    adata.uns["reference_values_ext"] = values_extended
+
+    # Iteratively diffuse values across the graph
+    values_interp = np.full(adata.n_obs, 0.5)
+    i = -1
+    cond = True
+    while cond:
+        i += 1
+        # Do diffusion step
+        values_interp[ref_index_extended] = values_extended
+        values_interp_new = graph.P @ values_interp
+
+        if n_iter == None:
+            # In this case, we're stopping based on thresh
+            diff = np.sum((values_interp - values_interp_new) ** 2)
+            cond = diff > thresh
+
+            # Also check for max_iter
+            if i > max_iter:
+                cond = False
+        # Always update the values
+        values_interp = values_interp_new
+
+    return values_interp
 
 def _create_pdf_from_embedding(data_embedding):
     # DEPRECATED 3/1/21 - This is outdated method
