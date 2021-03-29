@@ -19,6 +19,7 @@ def _preprocess(adata):
     adata.uns["preprocessed_for_differential_abundance"] = True
     return adata
 
+
 def _diffuse_values(adata, thresh=1e-6, max_iter=10000, ref_neighbors=7):
     """Uses diffusion to interpolate between fixed values at set reference points
 
@@ -50,7 +51,7 @@ def _diffuse_values(adata, thresh=1e-6, max_iter=10000, ref_neighbors=7):
     # Mask to get values that aren't references for interpolation
     not_reference = ~np.isin(np.arange(adata.n_obs), reference_index)
 
-    ## Generate signal values at each reference
+    # Generate signal values at each reference
     # Assign values to peaks
     values = np.tile([0, 1], n_ref // 2 + 1)[:n_ref]
     np.random.shuffle(values)
@@ -110,6 +111,7 @@ def _diffuse_values(adata, thresh=1e-6, max_iter=10000, ref_neighbors=7):
         values_interp = values_interp_new
 
     return values_interp
+
 
 def _create_pdf_from_embedding(data_embedding):
     # DEPRECATED 3/1/21 - This is outdated method
