@@ -10,6 +10,7 @@ Python packages:
 
 * harmonic-alignment
 * pybedtools
+* meld
 * pyensembl
 * magic-impute
 * molecular-cross-validation
